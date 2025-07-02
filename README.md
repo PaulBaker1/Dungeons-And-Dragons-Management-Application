@@ -127,7 +127,7 @@ This project is licensed under the MIT License.
 
 ## 👑 Authors & Credits
 
-Created by [Your Name]  
+Created by Pawel Kopiec
 Inspired by modern TTRPG needs, designed for real gaming groups.
 
 ---
