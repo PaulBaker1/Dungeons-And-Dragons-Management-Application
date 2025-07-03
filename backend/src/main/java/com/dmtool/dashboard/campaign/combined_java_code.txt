@@ -1,0 +1,1097 @@
+
+
+// ===== File: controller\CampaignController.java =====
+
+package com.dmtool.dashboard.campaign.controller;
+
+import com.dmtool.dashboard.campaign.dto.CampaignCreateDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignDetailsDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignSummaryDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignUpdateDTO;
+import com.dmtool.dashboard.campaign.service.CampaignService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.annotation.*;
+
+import java.time.LocalDate;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/campaigns")
+@RequiredArgsConstructor
+public class CampaignController {
+
+    private final CampaignService service;
+
+    @Operation(summary = "Get all campaigns or filter by tag")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Successful retrieval",
+                    content = @Content(mediaType = "application/json",
+                            schema = @Schema(implementation = CampaignSummaryDTO.class)))
+    })
+    @GetMapping
+    public ResponseEntity<List<CampaignSummaryDTO>> all(
+            @RequestParam(required = false) String tag,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        Pageable pageable = PageRequest.of(page, size);
+        List<CampaignSummaryDTO> result = (tag == null || tag.isBlank())
+                ? service.getAll(pageable)
+                : service.getByTag(tag, pageable);
+        return ResponseEntity.ok(result);
+    }
+
+    @Operation(summary = "Create a new campaign")
+    @PostMapping("/create")
+    public ResponseEntity<CampaignDetailsDTO> create(@Valid @RequestBody CampaignCreateDTO dto) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(service.create(dto));
+    }
+
+    @Operation(summary = "Delete a campaign by ID")
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable Long id) {
+        service.delete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @Operation(summary = "Toggle pin status of a campaign")
+    @PatchMapping("/{id}/pin")
+    public ResponseEntity<CampaignDetailsDTO> pin(@PathVariable Long id) {
+        return ResponseEntity.ok(service.togglePinned(id));
+    }
+
+    @Operation(summary = "Set the last session date of a campaign")
+    @PatchMapping("/{id}/last-session")
+    public ResponseEntity<CampaignDetailsDTO> setLastSession(
+            @PathVariable Long id,
+            @RequestParam("lastSessionDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date
+    ) {
+        return ResponseEntity.ok(service.setLastSessionDate(id, date));
+    }
+
+    @Operation(summary = "Archive a campaign")
+    @PatchMapping("/{id}/archive")
+    public ResponseEntity<CampaignDetailsDTO> archive(@PathVariable Long id) {
+        return ResponseEntity.ok(service.archive(id));
+    }
+
+    @Operation(summary = "Update a campaign")
+    @PutMapping("/{id}")
+    public ResponseEntity<CampaignDetailsDTO> update(
+            @PathVariable Long id,
+            @Valid @RequestBody CampaignUpdateDTO dto
+    ) {
+        return ResponseEntity.ok(service.update(id, dto));
+    }
+
+    @Operation(summary = "Get campaign statistics")
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Object>> stats() {
+        return ResponseEntity.ok(service.getStats());
+    }
+
+    @Operation(summary = "Get campaign details by ID")
+    @GetMapping("/{id}")
+    public ResponseEntity<CampaignDetailsDTO> getDetails(@PathVariable Long id) {
+        return ResponseEntity.ok(service.getDetails(id));
+    }
+
+    @ExceptionHandler(MethodArgumentNotValidException.class)
+    public ResponseEntity<Map<String, String>> handleValidationExceptions(MethodArgumentNotValidException ex) {
+        Map<String, String> errors = new HashMap<>();
+        ex.getBindingResult().getFieldErrors().forEach(error ->
+                errors.put(error.getField(), error.getDefaultMessage()));
+        return ResponseEntity.badRequest().body(errors);
+    }
+}
+
+
+
+// ===== File: dto\CampaignCreateDTO.java =====
+
+package com.dmtool.dashboard.campaign.dto;
+
+import com.dmtool.dashboard.campaign.model.CampaignStatus;
+import com.dmtool.dashboard.campaign.model.LevelRange;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.*;
+
+import java.util.List;
+import java.util.Set;
+
+@Schema(description = "Payload to create a new campaign")
+public record CampaignCreateDTO(
+        @NotBlank
+        @Size(min = 3, max = 255)
+        @Schema(description = "Title of the campaign", example = "Rise of the Necromancer")
+        String title,
+
+        @NotBlank
+        @Size(max = 1000)
+        @Schema(description = "Campaign description", example = "Necromancers rise from the ruins of Ashvalen.")
+        String description,
+
+        @NotNull
+        @Schema(description = "Initial status of campaign", example = "DRAFT")
+        CampaignStatus status,
+
+        @Min(1)
+        @Max(20)
+        @Schema(description = "Minimum player level", example = "3")
+        int minLevel,
+
+        @Min(1)
+        @Max(20)
+        @Schema(description = "Maximum player level", example = "10")
+        int maxLevel,
+
+        @Size(max = 255)
+        @Schema(description = "Adventure code for player access", example = "XYZ-123-AB")
+        String adventureCode,
+
+        @NotNull
+        @Schema(description = "Tags (unique, lowercase)", example = "[\"epic\", \"low-magic\"]")
+        Set<@NotBlank @Size(max = 50) String> tags,
+
+        @NotNull
+        @Schema(description = "Involved faction IDs", example = "[1, 2]")
+        Set<@NotNull @Min(1) Long> involvedFactions,
+
+        @Schema(description = "Can players view this campaign?", example = "true")
+        boolean visibleToPlayers,
+
+        @Schema(description = "Major sections of the campaign", example = "[\"Act I: The Fall\", \"Act II: The Rise\"]")
+        List<@NotBlank String> sections,
+
+        @Schema(description = "Key locations within the campaign", example = "[\"Shadowfell Keep\", \"Moonbridge\"]")
+        List<@NotBlank String> keyLocations,
+
+        @Schema(description = "Is the campaign archived?", example = "false")
+        boolean archived,
+
+        @Schema(description = "Commanded level range for the Campaig")
+        LevelRange levelRange
+) {
+}
+
+
+// ===== File: dto\CampaignDetailsDTO.java =====
+
+package com.dmtool.dashboard.campaign.dto;
+
+import com.dmtool.dashboard.campaign.model.CampaignStatus;
+import com.dmtool.dashboard.campaign.model.LevelRange;
+import com.dmtool.dashboard.character.model.PlayerCharacter;
+import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Set;
+
+@Schema(description = "Full details of a campaign")
+public record CampaignDetailsDTO(
+        @Schema(description = "ID of the campaign", example = "101")
+        Long id,
+
+        @Schema(description = "Title of the campaign", example = "Rime of the Frostmaiden")
+        String title,
+
+        @Schema(description = "Detailed description", example = "Frozen terror grips the land of Icewind Dale.")
+        String description,
+
+        @Schema(description = "Whether this campaign is archived", example = "false")
+        boolean archived,
+
+        @Schema(description = "Timestamp of last session", example = "2025-03-23T18:00:00")
+        LocalDateTime lastSessionDate,
+
+        @Schema(description = "Whether this campaign is pinned", example = "true")
+        boolean pinned,
+
+        @Schema(description = "Private notes (DM only)")
+        String dmNotesPrivate,
+
+        @Schema(description = "Public notes (player-visible)")
+        String dmNotesPublic,
+        @Schema(description = "Recommended level range for the campaign", example = "1-5")
+        LevelRange recommendedLevelRange,
+
+        @Schema(description = "Key story sections/chapters", example = "[\"Chapter 1: The Frozen Wastes\", \"Chapter 2: Sunblight\"]")
+        Set<String> sections,
+
+        @Schema(description = "Important locations in the campaign", example = "[\"Bryn Shander\", \"Ythryn\"]")
+        Set<String> keyLocations,
+
+        @Schema(description = "Adventure module code", example = "WDH")
+        String adventureCode,
+
+        @Schema(description = "Factions involved in the story", example = "[\"Arcane Brotherhood\", \"Reghed Tribes\"]")
+        Set<String> involvedFactions,
+
+        @Schema(description = "Campaign tags/categories", example = "[\"Arctic\", \"Ancient Magic\", \"Feywild\"]")
+        Set<String> tags,
+
+        @Schema(description = "Current campaign status",
+                example = "ACTIVE",
+                allowableValues = {"ACTIVE", "COMPLETED", "ON_HIATUS", "PREPARATION"})
+        CampaignStatus status,
+
+        @Schema(description = "Visibility to players", example = "true")
+        Boolean visibleToPlayers,
+
+        @Schema(description = "Characters in this campaign")
+        List<PlayerCharacter> characters
+) {
+}
+
+
+// ===== File: dto\CampaignSummaryDTO.java =====
+
+package com.dmtool.dashboard.campaign.dto;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
+import java.time.LocalDateTime;
+
+@Schema(description = "Lightweight summary of a campaign")
+public record CampaignSummaryDTO(
+        @Schema(description = "ID of the campaign", example = "42")
+        Long id,
+
+        @Schema(description = "Title", example = "Curse of Strahd")
+        String title,
+
+        String description, @Schema(description = "Timestamp of last session", example = "2025-03-23T18:00:00")
+        LocalDateTime lastSessionDate,
+
+        Boolean pinned
+
+) {
+}
+
+
+// ===== File: dto\CampaignUpdateDTO.java =====
+
+package com.dmtool.dashboard.campaign.dto;
+
+import com.dmtool.dashboard.campaign.model.CampaignStatus;
+import com.dmtool.dashboard.campaign.model.LevelRange;
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.*;
+
+import java.util.List;
+import java.util.Set;
+
+@Schema(description = "Fields that can be updated in a campaign")
+public record CampaignUpdateDTO(
+        @Size(min = 3, max = 255)
+        @Schema(description = "Updated title", example = "Feywild Reimagined")
+        String title,
+
+        @Size(max = 1000)
+        @Schema(description = "Updated description", example = "A twisted new path through the Feywild.")
+        String description,
+
+        @Schema(description = "Campaign status", example = "ACTIVE")
+        CampaignStatus status,
+
+        @Min(1)
+        @Max(20)
+        @Schema(description = "Minimum level", example = "4")
+        Integer minLevel,
+
+        @Min(1)
+        @Max(20)
+        @Schema(description = "Maximum level", example = "15")
+        Integer maxLevel,
+
+        @Schema(description = "Updated tags", example = "[\"dreams\", \"fey\"]")
+        Set<@NotBlank @Size(max = 50) String> tags,
+
+        @Schema(description = "Updated factions", example = "[3, 4]")
+        Set<@NotNull Long> involvedFactions,
+
+        @Schema(description = "Visibility toggle", example = "true")
+        Boolean visibleToPlayers,
+
+        @Schema(description = "Recommended level range text", example = "Levels 4–10")
+        LevelRange recommendedLevelRange,
+
+        @Schema(description = "Banner image URL")
+        String bannerImageUrl,
+
+
+        List<@NotBlank String> sections,
+
+        List<@NotBlank String> keyLocations,
+
+        @Schema(description = "Private notes (DM only)", example = "Traps reset every 48 hours")
+        String dmNotesPrivate,
+
+        @Schema(description = "Public notes (player-visible)", example = "Discovered ruins in forest")
+        String dmNotesPublic,
+
+        @Size(max = 255)
+        String adventureCode,
+
+        Boolean pinned
+) {
+}
+
+
+// ===== File: mapper\CampaignMapper.java =====
+
+package com.dmtool.dashboard.campaign.mapper;
+
+import com.dmtool.dashboard.campaign.dto.CampaignCreateDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignDetailsDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignSummaryDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignUpdateDTO;
+import com.dmtool.dashboard.campaign.model.*;
+import com.dmtool.dashboard.campaign.repository.FactionRepository;
+import com.dmtool.dashboard.campaign.repository.TagRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Component;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+@Component
+@RequiredArgsConstructor
+public class CampaignMapper {
+
+    private final FactionRepository factionRepo;
+    private final TagRepository tagRepo;
+
+    public Campaign fromCreateDTO(CampaignCreateDTO dto) {
+        Campaign entity = new Campaign();
+
+        // ✅ Basic fields
+        entity.setTitle(dto.title());
+        entity.setDescription(dto.description());
+        entity.setStatus(dto.status());
+        entity.setAdventureCode(dto.adventureCode());
+        entity.setVisibleToPlayers(dto.visibleToPlayers());
+        entity.setPinned(false);// Default false unless updated
+
+        // ✅ Recommended level range
+        LevelRange levelRange = new LevelRange();
+        levelRange.setMinLevel(dto.minLevel());
+        levelRange.setMaxLevel(dto.maxLevel());
+        entity.setRecommendedLevelRange(levelRange);
+
+
+        // ✅ Sections
+        if (dto.sections() != null && !dto.sections().isEmpty()) {
+            entity.setSections(dto.sections().stream()
+                    .map(CampaignSection::new)
+                    .collect(Collectors.toList()));
+        } else {
+            entity.setSections(new ArrayList<>());
+        }
+
+        // ✅ Locations
+        if (dto.keyLocations() != null && !dto.keyLocations().isEmpty()) {
+            entity.setKeyLocations(dto.keyLocations().stream()
+                    .map(name -> new CampaignLocation(name, entity))
+                    .collect(Collectors.toList()));
+        } else {
+            entity.setKeyLocations(new ArrayList<>());
+        }
+
+        // ✅ Factions
+        Set<Long> factionIds = dto.involvedFactions();
+        if (factionIds != null && !factionIds.isEmpty()) {
+            entity.setInvolvedFactions(new HashSet<>(factionRepo.findAllById(factionIds)));
+        } else {
+            entity.setInvolvedFactions(new HashSet<>());
+        }
+
+        // ✅ Tags
+        entity.setTags(resolveTags(dto.tags()));
+
+        return entity;
+    }
+
+    public CampaignDetailsDTO toDetailsDTO(Campaign entity) {
+        return new CampaignDetailsDTO(
+                entity.getId(),
+                entity.getTitle(),
+                entity.getDescription(),
+                entity.isArchived(),
+                entity.getLastSessionDate(),
+                entity.isPinned(),
+                entity.getDmNotesPrivate(),
+                entity.getDmNotesPublic(),
+                entity.getRecommendedLevelRange(),  // ✅ Pass LevelRange directly
+                entity.getSections().stream()
+                        .map(CampaignSection::getTitle)
+                        .collect(Collectors.toSet()),
+                entity.getKeyLocations().stream()
+                        .map(CampaignLocation::getName)
+                        .collect(Collectors.toSet()),
+                entity.getAdventureCode(),
+                entity.getInvolvedFactions().stream()
+                        .map(Faction::getName)
+                        .collect(Collectors.toSet()),
+                entity.getTags().stream()
+                        .map(Tag::getName)
+                        .collect(Collectors.toSet()),
+                entity.getStatus(),
+                entity.getVisibleToPlayers(),
+                entity.getCharacters()
+        );
+
+    }
+
+    public CampaignSummaryDTO toSummaryDTO(Campaign entity) {
+        return new CampaignSummaryDTO(
+                entity.getId(),
+                entity.getTitle(),
+                entity.getDescription(),
+                entity.getLastSessionDate(),
+                entity.isPinned()
+        );
+    }
+
+    public void update(Campaign entity, CampaignUpdateDTO dto) {
+        if (dto.title() != null)
+            entity.setTitle(dto.title());
+
+        if (dto.description() != null)
+            entity.setDescription(dto.description());
+
+        if (dto.recommendedLevelRange() != null)
+            entity.setRecommendedLevelRange(dto.recommendedLevelRange());
+
+        if (dto.sections() != null) {
+            entity.getSections().clear();
+            dto.sections().forEach(title -> entity.getSections().add(new CampaignSection(title)));
+        }
+
+        if (dto.keyLocations() != null) {
+            entity.getKeyLocations().clear();
+            dto.keyLocations().forEach(name -> entity.getKeyLocations().add(new CampaignLocation(name, entity)));
+        }
+
+        if (dto.adventureCode() != null)
+            entity.setAdventureCode(dto.adventureCode());
+
+        if (dto.involvedFactions() != null) {
+            entity.setInvolvedFactions(new HashSet<>(factionRepo.findAllById(dto.involvedFactions())));
+        }
+
+        if (dto.tags() != null) {
+            entity.setTags(resolveTags(dto.tags()));
+    }
+
+        if (dto.status() != null)
+            entity.setStatus(dto.status());
+
+        if (dto.visibleToPlayers() != null)
+            entity.setVisibleToPlayers(dto.visibleToPlayers());
+
+        if (dto.pinned() != null)
+            entity.setPinned(dto.pinned());
+
+        if (dto.dmNotesPrivate() != null)
+            entity.setDmNotesPrivate(dto.dmNotesPrivate());
+
+        if (dto.dmNotesPublic() != null)
+            entity.setDmNotesPublic(dto.dmNotesPublic());
+
+        if (dto.bannerImageUrl() != null) {
+            entity.setBannerImageUrl(dto.bannerImageUrl());
+        }
+
+    }
+
+    private Set<Tag> resolveTags(Set<String> tagNames) {
+        if (tagNames == null || tagNames.isEmpty()) return Set.of();
+        return tagNames.stream()
+                .map(name -> tagRepo.findByName(name)
+                        .orElseGet(() -> tagRepo.save(new Tag(null, name))))
+                .collect(Collectors.toSet());
+    }
+}
+
+
+// ===== File: model\Campaign.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import com.dmtool.dashboard.character.model.PlayerCharacter;
+import com.dmtool.dashboard.session.model.Session;
+import com.fasterxml.jackson.annotation.JsonManagedReference;
+import jakarta.persistence.*;
+import lombok.*;
+
+
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
+@Entity
+@Table(name = "campaign")
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder(toBuilder = true) // Replace @SuperBuilder
+public class Campaign {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false)
+    private String title;
+
+    @Version
+    @Column(name = "version")
+    private Long version = 0L;
+
+
+    @Column(length = 1000)
+    private String description;
+
+    @Embedded
+    private LevelRange recommendedLevelRange;
+
+    @ElementCollection
+    @CollectionTable(name = "campaign_sections", joinColumns = @JoinColumn(name = "campaign_id"))
+    private List<CampaignSection> sections = new ArrayList<>();
+
+    @OneToMany(mappedBy = "campaign", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<CampaignLocation> keyLocations = new ArrayList<>();
+
+    @JsonManagedReference
+    @OneToMany(mappedBy = "campaign", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<Session> sessions = new ArrayList<>();
+
+
+    @ManyToMany
+    @JoinTable(
+            name = "campaign_factions",
+            joinColumns = @JoinColumn(name = "campaign_id"),
+            inverseJoinColumns = @JoinColumn(name = "faction_id")
+    )
+    private Set<Faction> involvedFactions = new HashSet<>();
+
+
+    @ManyToMany(cascade = {CascadeType.PERSIST, CascadeType.MERGE})
+    @JoinTable(
+            name = "campaign_tags",
+            joinColumns = @JoinColumn(name = "campaign_id"),
+            inverseJoinColumns = @JoinColumn(name = "tag_id")
+    )
+    private Set<Tag> tags;
+
+    @OneToMany(mappedBy = "campaign", cascade = CascadeType.ALL, orphanRemoval = true)
+    private List<PlayerCharacter> characters = new ArrayList<>();
+
+    @Setter
+    @Enumerated(EnumType.STRING)
+    private CampaignStatus status;
+
+    @Column(name = "visible_to_players", nullable = false)
+    @Builder.Default
+    private Boolean visibleToPlayers = false;
+
+    @Builder.Default
+    private boolean pinned = false;
+
+    private String adventureCode;
+
+    @Setter
+    @Getter
+    @Column(nullable = false)
+    private boolean archived = false;
+
+    private LocalDateTime lastSessionDate;
+
+    @Column(updatable = false)
+    private LocalDateTime createdAt;
+
+    @PrePersist
+    public void prePersist() {
+        createdAt = LocalDateTime.now();
+    }
+
+    @Column(columnDefinition = "TEXT")
+    private String dmNotesPrivate;
+
+    @Column(columnDefinition = "TEXT")
+    private String dmNotesPublic;
+
+    @Column(nullable = true)
+    String bannerImageUrl;
+}
+
+// ===== File: model\CampaignLocation.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@EqualsAndHashCode(of = "id")
+public class CampaignLocation {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    private String name;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "campaign_id")
+    private Campaign campaign;
+
+    public CampaignLocation(String name, Campaign campaign) {
+        this.name = name;
+        this.campaign = campaign;
+    }
+}
+
+
+// ===== File: model\CampaignSection.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import jakarta.persistence.Embeddable;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Embeddable
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class CampaignSection {
+    private String title;
+}
+
+
+
+// ===== File: model\CampaignStatus.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+
+@Schema(description = "Status of a campaign")
+public enum CampaignStatus {
+    @Schema(
+            description = "Campaign is in preparation phase, not yet visible to players",
+            example = "DRAFT"
+    )
+    DRAFT,
+
+    @Schema(
+            description = "Campaign is currently running and active",
+            example = "ACTIVE"
+    )
+    ACTIVE,
+
+    @Schema(
+            description = "Campaign has reached its conclusion",
+            example = "COMPLETED"
+    )
+    COMPLETED,
+
+    @Schema(
+            description = "Campaign is archived and hidden from default views",
+            example = "ARCHIVED"
+    )
+    ARCHIVED
+}
+
+// ===== File: model\Faction.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+import org.hibernate.proxy.HibernateProxy;
+
+import java.util.Objects;
+
+@Entity
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class Faction {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String name;
+
+    @Override
+    public final boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null) return false;
+        Class<?> oEffectiveClass = o instanceof HibernateProxy ? ((HibernateProxy) o).getHibernateLazyInitializer().getPersistentClass() : o.getClass();
+        Class<?> thisEffectiveClass = this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass() : this.getClass();
+        if (thisEffectiveClass != oEffectiveClass) return false;
+        Faction faction = (Faction) o;
+        return getId() != null && Objects.equals(getId(), faction.getId());
+    }
+
+    @Override
+    public final int hashCode() {
+        return this instanceof HibernateProxy ? ((HibernateProxy) this).getHibernateLazyInitializer().getPersistentClass().hashCode() : getClass().hashCode();
+    }
+}
+
+
+
+// ===== File: model\LevelRange.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.persistence.Embeddable;
+import lombok.AllArgsConstructor;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
+import lombok.Setter;
+
+@Embeddable
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+public class LevelRange {
+    @Schema(description = "Minimum recommended level", example = "1")
+    private int minLevel;
+
+    @Schema(description = "Maximum recommended level", example = "5")
+    private int maxLevel;
+}
+
+// ===== File: model\Tag.java =====
+
+package com.dmtool.dashboard.campaign.model;
+
+import jakarta.persistence.*;
+import lombok.*;
+
+import java.util.Objects;
+
+@Entity
+@Table(
+        name = "tag",
+        uniqueConstraints = @UniqueConstraint(name = "uk_tag_name", columnNames = "name")
+)
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class Tag {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(nullable = false, unique = true)
+    private String name;
+
+    public Tag(String name) {
+        this.name = name;
+    }
+
+    // ⚠ Add equals & hashCode based on 'name'
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Tag tag)) return false;
+        return Objects.equals(name, tag.name);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(name);
+    }
+}
+
+
+
+// ===== File: repository\CampaignRepository.java =====
+
+package com.dmtool.dashboard.campaign.repository;
+
+import com.dmtool.dashboard.campaign.model.Campaign;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+
+import java.util.List;
+import java.util.Optional;
+
+public interface CampaignRepository extends JpaRepository<Campaign, Long> {
+
+    // ❌ This method is still invalid and should be removed or fixed
+    // List<Campaign> findByTagsContainingIgnoreCase(String tag);
+
+    // ✅ Proper custom query with JOIN on tag name
+    Page<Campaign> findByArchivedFalse(Pageable pageable);
+
+    @Query("""
+                SELECT DISTINCT c FROM Campaign c 
+                JOIN c.tags t 
+                WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :tagName, '%')) 
+                AND c.archived = false
+            """)
+    Page<Campaign> findByTagNameContainingIgnoreCaseAndArchivedFalse(@Param("tagName") String tag, Pageable pageable);
+
+    List<Campaign> findByArchivedFalse();
+
+    long countByArchivedTrue();
+
+    Optional<Campaign> findTopByOrderByCreatedAtDesc();
+
+    @Query(value = """
+            SELECT DISTINCT c.* FROM campaign c
+            JOIN campaign_tags ct ON c.id = ct.campaign_id
+            JOIN tag t ON ct.tag_id = t.id
+            WHERE LOWER(t.name) LIKE LOWER(CONCAT('%', :tagName, '%'))
+              AND c.archived = false
+            """, nativeQuery = true)
+    List<Campaign> searchCampaignsByTagNameNative(@Param("tagName") String tagName);
+
+}
+
+
+// ===== File: repository\FactionRepository.java =====
+
+package com.dmtool.dashboard.campaign.repository;
+
+import com.dmtool.dashboard.campaign.model.Faction;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface FactionRepository extends JpaRepository<Faction, Long> {
+    Optional<Faction> findByName(String name);
+}
+
+
+// ===== File: repository\TagRepository.java =====
+
+package com.dmtool.dashboard.campaign.repository;
+
+import com.dmtool.dashboard.campaign.model.Tag;
+import org.springframework.data.jpa.repository.JpaRepository;
+
+import java.util.Optional;
+
+public interface TagRepository extends JpaRepository<Tag, Long> {
+    Optional<Tag> findByName(String name);
+}
+
+
+// ===== File: service\CampaignService.java =====
+
+package com.dmtool.dashboard.campaign.service;
+
+import com.dmtool.dashboard.campaign.dto.CampaignCreateDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignDetailsDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignSummaryDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignUpdateDTO;
+import org.springframework.data.domain.Pageable;
+
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
+
+public interface CampaignService {
+    List<CampaignSummaryDTO> getAll(Pageable pageable);
+
+    List<CampaignSummaryDTO> getByTag(String tag, Pageable pageable);
+
+    CampaignDetailsDTO create(CampaignCreateDTO dto);
+
+    CampaignDetailsDTO pin(Long id);
+
+    CampaignDetailsDTO update(Long id, CampaignUpdateDTO dto );
+
+    CampaignDetailsDTO togglePinned(Long id);
+
+    CampaignDetailsDTO archive(Long id);
+
+    CampaignDetailsDTO setLastSessionDate(Long id, LocalDate date);
+
+    CampaignDetailsDTO getDetails(Long id);
+
+    void delete(Long id);
+
+    Map<String, Object> getStats();
+}
+
+// ===== File: service\CampaignServiceImpl.java =====
+
+package com.dmtool.dashboard.campaign.service;
+
+import com.dmtool.dashboard.campaign.dto.CampaignCreateDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignDetailsDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignSummaryDTO;
+import com.dmtool.dashboard.campaign.dto.CampaignUpdateDTO;
+import com.dmtool.dashboard.campaign.mapper.CampaignMapper;
+import com.dmtool.dashboard.campaign.model.Campaign;
+import com.dmtool.dashboard.campaign.model.CampaignStatus;
+import com.dmtool.dashboard.campaign.model.Tag;
+import com.dmtool.dashboard.campaign.repository.CampaignRepository;
+import com.dmtool.dashboard.campaign.repository.TagRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
+import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+public class CampaignServiceImpl implements CampaignService {
+
+    private final CampaignRepository repo;
+    private final CampaignMapper mapper;
+    private final TagRepository tagRepository; // 🆕 ADD THIS
+
+    @Override
+    public List<CampaignSummaryDTO> getAll(Pageable pageable) {
+        return repo.findByArchivedFalse(pageable)
+                .map(mapper::toSummaryDTO)
+                .toList();
+    }
+
+    @Override
+    public List<CampaignSummaryDTO> getByTag(String tag, Pageable pageable) {
+        return repo.findByTagNameContainingIgnoreCaseAndArchivedFalse(tag, pageable)
+                .map(mapper::toSummaryDTO)
+                .toList();
+    }
+
+
+    @Override
+    public CampaignDetailsDTO create(CampaignCreateDTO dto) {
+        Campaign campaign = mapper.fromCreateDTO(dto);
+        campaign.setStatus(CampaignStatus.DRAFT);
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    @Override
+    public CampaignDetailsDTO pin(Long id) {
+        Campaign campaign = repo.findById(id).orElseThrow();
+        campaign.setPinned(true);
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    // Inside update() before saving
+    @Override
+    public CampaignDetailsDTO update(Long id, CampaignUpdateDTO dto) {
+        Campaign campaign = repo.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+
+        mapper.update(campaign, dto);
+
+        // 🧠 Deduplicate tags here
+        if (campaign.getTags() != null) {
+            Set<Tag> deduped = campaign.getTags().stream()
+                    .map(tag -> tagRepository.findByName(tag.getName()).orElse(tag))
+                    .collect(Collectors.toSet());
+            campaign.setTags(deduped);
+        }
+
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    @Override
+    public CampaignDetailsDTO togglePinned(Long id) {
+        Campaign campaign = repo.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found"));
+        campaign.setPinned(!campaign.isPinned());
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    @Override
+    public CampaignDetailsDTO archive(Long id) {
+        Campaign campaign = repo.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found"));
+        campaign.setArchived(true);
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    @Override
+    public CampaignDetailsDTO setLastSessionDate(Long id, LocalDate date) {
+        Campaign campaign = repo.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found"));
+        campaign.setLastSessionDate(date.atStartOfDay());
+        return mapper.toDetailsDTO(repo.save(campaign));
+    }
+
+    @Override
+    public CampaignDetailsDTO getDetails(Long id) {
+        return mapper.toDetailsDTO(repo.findById(id).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found")));
+    }
+
+    @Override
+    public void delete(Long id) {
+        if (!repo.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Campaign not found");
+        }
+        repo.deleteById(id);
+    }
+
+    @Override
+    public Map<String, Object> getStats() {
+        long total = repo.count();
+        long archived = repo.countByArchivedTrue();
+        long active = total - archived;
+        LocalDateTime lastUpdated = repo.findTopByOrderByCreatedAtDesc().map(Campaign::getCreatedAt).orElse(null);
+
+        Map<String, Object> stats = new HashMap<>();
+        stats.put("total", total);
+        stats.put("active", active);
+        stats.put("archived", archived);
+        stats.put("lastUpdate", lastUpdated);
+        return stats;
+    }
+}

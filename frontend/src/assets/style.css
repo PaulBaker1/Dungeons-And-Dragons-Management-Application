@@ -1,0 +1,20 @@
+/* src/assets/style.css */
+* {
+    box-sizing: border-box;
+}
+
+html, body, #app {
+    height: 100%;
+}
+
+.btn-primary {
+    @apply bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded text-sm;
+}
+
+.btn-outline {
+    @apply border border-slate-600 text-slate-300 hover:bg-slate-700 py-2 px-4 rounded text-sm;
+}
+
+#toggle-width {
+    transition: background 0.3s;
+}
