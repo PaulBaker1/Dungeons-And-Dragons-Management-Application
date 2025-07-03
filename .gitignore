@@ -1,0 +1,10 @@
+# Maven/Java
+**/target/
+*.iml
+.idea/
+.classpath
+.project
+
+# Node/Vue
+frontend/node_modules/
+frontend/dist/
